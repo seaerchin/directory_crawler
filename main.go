@@ -13,7 +13,7 @@ import (
 
 func main() {
 	seenList := make(map[string]filesize.Directory)
-	workList := make(chan string, 10)
+	workList := make(chan []string)
 	resultList := make(chan filesize.Directory)
 	var wg sync.WaitGroup
 
@@ -22,9 +22,9 @@ func main() {
 
 	go func() {
 		if len(os.Args[1:]) == 0 {
-			workList <- "."
+			workList <- []string{"."}
 		} else {
-			workList <- os.Args[1:][0]
+			workList <- []string{os.Args[1:][0]}
 		}
 	}()
 
@@ -34,17 +34,13 @@ func main() {
 		}
 	}()
 
-	wg.Add(1)
-	filesize.DirCrawl(<-workList, workList, resultList, &wg)
-
 	go func() {
 		for i := range workList {
-			fmt.Println("received: " + i)
-			if _, ok := seenList[i]; !ok {
-				go func() {
+			for _, job := range i {
+				if _, ok := seenList[job]; !ok {
 					wg.Add(1)
-					filesize.DirCrawl(i, workList, resultList, &wg)
-				}()
+					go filesize.DirCrawl(job, workList, resultList, &wg)
+				}
 			}
 		}
 	}()

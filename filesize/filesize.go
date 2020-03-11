@@ -64,7 +64,7 @@ func dirCrawl(s string) (d Directory, err error) {
 }
 
 // DirCrawl is a handler for the dirCrawl method - this handles the recursive calls
-func DirCrawl(s string, workList chan<- string, resultList chan<- Directory, wg *sync.WaitGroup) {
+func DirCrawl(s string, workList chan<- []string, resultList chan<- Directory, wg *sync.WaitGroup) {
 	result, err := dirCrawl(s)
 	defer fmt.Println("done")
 	defer wg.Done()
@@ -72,9 +72,12 @@ func DirCrawl(s string, workList chan<- string, resultList chan<- Directory, wg 
 		fmt.Println(err)
 		return
 	}
+
+	toSend := make([]string, 0)
 	for _, v := range result.subDirs {
 		fmt.Println("sending: " + v)
-		workList <- v
+		toSend = append(toSend, v)
 	}
+	workList <- toSend
 	resultList <- result
 }
