@@ -11,8 +11,13 @@ import (
 	"github.com/seaerchin/directory_crawler/filesize"
 )
 
+type seenList struct {
+	sync.RWMutex
+	cache map[string]filesize.Directory
+}
+
 func main() {
-	seenList := make(map[string]filesize.Directory)
+	seenList := seenList{sync.RWMutex{}, make(map[string]filesize.Directory)}
 	workList := make(chan []string)
 	resultList := make(chan filesize.Directory)
 	var wg sync.WaitGroup
@@ -30,14 +35,19 @@ func main() {
 
 	go func() {
 		for result := range resultList {
-			seenList[result.Name] = result
+			seenList.Lock()
+			seenList.cache[result.Name] = result
+			seenList.Unlock()
 		}
 	}()
 
 	go func() {
-		for i := range workList {
-			for _, job := range i {
-				if _, ok := seenList[job]; !ok {
+		for jobList := range workList {
+			for _, job := range jobList {
+				seenList.RLock()
+				_, ok := seenList.cache[job]
+				seenList.RUnlock()
+				if !ok {
 					wg.Add(1)
 					go filesize.DirCrawl(job, workList, resultList, &wg)
 				}
@@ -45,15 +55,18 @@ func main() {
 		}
 	}()
 
+	// no guarantees of wait unless sleep - find a way to do some work in background
 	time.Sleep(1 * time.Second)
-
 	wg.Wait()
 	close(workList)
 	close(resultList)
 
-	for key, value := range seenList {
-		fmt.Println("key: " + key + " size: " + strconv.FormatInt(value.Size, 10))
+	for key, value := range seenList.cache {
+		fmt.Println("key: " + key + " size: " + strconv.FormatInt(value.Size, 10) + " largest file: " + value.Largest)
 	}
+
+	// add a sort here using sort.interface
+	// add some formatting
 
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("this is it")

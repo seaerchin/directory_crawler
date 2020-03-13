@@ -51,7 +51,6 @@ func dirCrawl(s string) (d Directory, err error) {
 		if info.IsDir() {
 			subName := filepath.Join(s, info.Name())
 			subDirs = append(subDirs, subName)
-			fmt.Printf("directory: %v \n", subDirs)
 		}
 		temp := info.Size()
 		if temp > max && file.Name() != f.Name() {
