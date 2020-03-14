@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -16,20 +17,33 @@ type seenList struct {
 	cache map[string]filesize.Directory
 }
 
+// TODO: impl verbose
+// TODO: add tests
+
+var numCrawler = flag.Int("n", 20, "set the maximum number of crawlers here!")
+var verbose = flag.Bool("v", false, "set to true for constant updates on the progress")
+var force = flag.Bool("f", false, "set to true to allow deletion of the largest files in ALL subdirectories")
+
 func main() {
+	flag.Parse()
+	// defensive check
+	if *numCrawler < 1 {
+		*numCrawler = 1
+	}
+
 	seenList := seenList{sync.RWMutex{}, make(map[string]filesize.Directory)}
 	workList := make(chan []string)
 	resultList := make(chan filesize.Directory)
+	numTokens := make(chan struct{}, *numCrawler)
+
 	var wg sync.WaitGroup
 
-	// TODO: check if only 1 args or refactor into accepting multiple args
-	// TODO: user to set number of crawlers
-
+	fmt.Println(os.Args)
 	go func() {
-		if len(os.Args[1:]) == 0 {
+		if len(flag.Args()) == 0 {
 			workList <- []string{"."}
 		} else {
-			workList <- []string{os.Args[1:][0]}
+			workList <- flag.Args()
 		}
 	}()
 
@@ -48,8 +62,10 @@ func main() {
 				_, ok := seenList.cache[job]
 				seenList.RUnlock()
 				if !ok {
+					numTokens <- struct{}{} // acquire token
 					wg.Add(1)
-					go filesize.DirCrawl(job, workList, resultList, &wg)
+					go filesize.DirCrawl(job, workList, resultList, *force, &wg)
+					<-numTokens // release token
 				}
 			}
 		}
@@ -64,9 +80,6 @@ func main() {
 	for key, value := range seenList.cache {
 		fmt.Println("key: " + key + " size: " + strconv.FormatInt(value.Size, 10) + " largest file: " + value.Largest)
 	}
-
-	// add a sort here using sort.interface
-	// add some formatting
 
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Println("this is it")

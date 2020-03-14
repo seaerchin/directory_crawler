@@ -24,15 +24,12 @@ type Directory struct {
 	Size    int64    // size of this directory
 }
 
-type DirMap struct {
-}
-
 // crawls the directory rooted at s - s must be passed in as a FULLY QUALIFIED DIR NAME
 // returns d and its associated information
-func dirCrawl(s string) (d Directory, err error) {
+func dirCrawl(s string, canDelete bool) (d Directory, err error) {
 	f, err := os.Open(s)
 	if err != nil {
-		return d, errors.New("Opening error:" + f.Name()) // need to return relevant information for d
+		return d, errors.New("Opening error: " + s) // need to return relevant information for d
 	}
 	dir, err := f.Readdir(-1)
 	if err != nil {
@@ -59,13 +56,16 @@ func dirCrawl(s string) (d Directory, err error) {
 		}
 		cumSum += temp
 	}
+	if canDelete {
+		os.Remove(filepath.Join(s, largest))
+	}
+
 	return Directory{subDirs: subDirs, Name: f.Name(), Largest: largest, Size: cumSum}, nil
 }
 
 // DirCrawl is a handler for the dirCrawl method - this handles the recursive calls
-func DirCrawl(s string, workList chan<- []string, resultList chan<- Directory, wg *sync.WaitGroup) {
-	result, err := dirCrawl(s)
-	defer fmt.Println("done")
+func DirCrawl(s string, workList chan<- []string, resultList chan<- Directory, canDelete bool, wg *sync.WaitGroup) {
+	result, err := dirCrawl(s, canDelete)
 	defer wg.Done()
 	if err != nil {
 		fmt.Println(err)
