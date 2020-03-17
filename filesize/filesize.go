@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/disiqueira/gotree"
 )
@@ -69,13 +70,8 @@ func dirCrawl(s string, canDelete bool) (d directory, err error) {
 // function will walk the directory rooted at s using filepath.walk
 func DirCrawl(r Request, canDelete bool, wg *sync.WaitGroup) {
 	defer wg.Done()
-	defer close(r.Result)
-	// d, err := dirCrawl(r.Job, canDelete) // double work done here
-
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-
+	fmt.Println(len(r.Sema))
+	r.Sema <- struct{}{}
 	// crawler gets called for every file in job
 	crawler := func(paths string, f os.FileInfo, err error) error {
 		// qualified directory
@@ -87,27 +83,22 @@ func DirCrawl(r Request, canDelete bool, wg *sync.WaitGroup) {
 			}
 			stringRep := fmt.Sprintf("%s - files: %d", f.Name(), info.size)
 			root := r.Root.Add(stringRep)
-			newRequest := Request{root, paths, make(chan interface{})}
+			newRequest := Request{root, paths, r.Sema}
 			wg.Add(1)
 			go DirCrawl(newRequest, canDelete, wg) // refactor to use requests so sub directories return a request; calling function appends subtrees to parent
 			return filepath.SkipDir
 		}
 		return nil
 	}
-
-	// close(r.SubDirs) // ordering maybe wrong
-	// for range d.subDirs {
-	// 	root.AddTree((<-r.SubDirs).(gotree.Tree))
-	// }
-	// r.Result <- r.Root
 	filepath.Walk(r.Job, filepath.WalkFunc(crawler))
+	<-r.Sema
 }
 
 // Request is a request to traverse the directory rooted at s; results are returned through the result channel
 type Request struct {
-	Root   gotree.Tree
-	Job    string
-	Result chan interface{} // communicate subroutine done
+	Root gotree.Tree
+	Job  string
+	Sema chan struct{} // ccounting semaphore to limit concurrency
 }
 
 func GetSize(s string) int64 {
@@ -116,4 +107,15 @@ func GetSize(s string) int64 {
 		panic("dude call this on a qualified dir man, wtf")
 	}
 	return info.size
+}
+
+// Spinner makes a spinny thing
+func Spinner() {
+	t := time.Tick(250 * time.Millisecond)
+	for {
+		for _, i := range "|/-\\" {
+			<-t
+			fmt.Printf("\r%c", i)
+		}
+	}
 }
