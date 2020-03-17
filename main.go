@@ -5,17 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strconv"
 	"sync"
-	"time"
 
+	"github.com/disiqueira/gotree"
 	"github.com/seaerchin/directory_crawler/filesize"
 )
-
-type seenList struct {
-	sync.RWMutex
-	cache map[string]filesize.Directory
-}
 
 // TODO: impl verbose
 // TODO: add tests
@@ -31,54 +25,32 @@ func main() {
 		*numCrawler = 1
 	}
 
-	seenList := seenList{sync.RWMutex{}, make(map[string]filesize.Directory)}
-	workList := make(chan []string)
-	resultList := make(chan filesize.Directory)
-	numTokens := make(chan struct{}, *numCrawler)
-
 	var wg sync.WaitGroup
+	var forest []gotree.Tree
 
-	fmt.Println(os.Args)
-	go func() {
-		if len(flag.Args()) == 0 {
-			workList <- []string{"."}
-		} else {
-			workList <- flag.Args()
+	if len(flag.Args()) > 0 {
+		for _, job := range flag.Args() {
+			root := gotree.New(fmt.Sprintf("%s - files: %d", job, filesize.GetSize(job)))
+			r := filesize.Request{root, job, make(chan interface{})}
+			forest = append(forest, r.Root)
+			wg.Add(1)
+			go filesize.DirCrawl(r, *force, &wg)
 		}
-	}()
-
-	go func() {
-		for result := range resultList {
-			seenList.Lock()
-			seenList.cache[result.Name] = result
-			seenList.Unlock()
-		}
-	}()
-
-	go func() {
-		for jobList := range workList {
-			for _, job := range jobList {
-				seenList.RLock()
-				_, ok := seenList.cache[job]
-				seenList.RUnlock()
-				if !ok {
-					numTokens <- struct{}{} // acquire token
-					wg.Add(1)
-					go filesize.DirCrawl(job, workList, resultList, *force, &wg)
-					<-numTokens // release token
-				}
-			}
-		}
-	}()
+	} else {
+		// repeated code but wtvr
+		root := gotree.New(fmt.Sprintf("%s - files: %d", ".", filesize.GetSize(".")))
+		r := filesize.Request{root, ".", make(chan interface{})}
+		forest = append(forest, r.Root)
+		wg.Add(1)
+		go filesize.DirCrawl(r, *force, &wg)
+	}
 
 	// no guarantees of wait unless sleep - find a way to do some work in background
-	time.Sleep(1 * time.Second)
 	wg.Wait()
-	close(workList)
-	close(resultList)
 
-	for key, value := range seenList.cache {
-		fmt.Println("key: " + key + " size: " + strconv.FormatInt(value.Size, 10) + " largest file: " + value.Largest)
+	for _, tree := range forest {
+		fmt.Println("here's your tree")
+		fmt.Println(tree.Print())
 	}
 
 	reader := bufio.NewReader(os.Stdin)
